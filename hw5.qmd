@@ -1,0 +1,122 @@
+---
+title: "hw5"
+format: 
+  html:
+    code-tools: true
+    highlight-style: github
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+editor: visual
+theme: Zephyr
+---
+
+# Information
+
+**the Github website for this homework is https://github.com/jiayihu-Jeffery/stats506_hw5**
+
+## Problem Set #05  
+
+## Problem 1 - OOP Programming
+
+Create a class to represent Wald-style normal approximation Confidence Intervals. Do this using S4.
+
+1.  For the `waldCI` class, define the following:
+    
+    1.  A constructor, which takes in either a mean and standard deviation, or a lower and upper bound along with a confidence level. This should be a custom constructor, not `new()` or `waldCI()`.
+    2.  A validator.
+    3.  A `show` method, which takes as arguments `level` and `digits`.
+    4.  Accessors: `lb`, `ub`, `mean`, `sterr`. `lb` and `ub` should take in `level`.
+    5.  Setters: `lb`, `ub`, `mean`, `sterr`. Be sure to validate the resulting `waldCI`. `lb` and `ub` should take in a `level`.
+    6.  A `contains` method, returning a logical of whether a value is within a CI of a certain `level`.
+    7.  An `overlap` method, that takes in two `waldCI`’s and a `level`, and returns a logical of whether the two confidence intervals overlap.
+    8.  `as.numeric` to return `c(lb, ub)` for a given `level`.
+    9.  `transform` which takes in a *monotonic* `function` and a `waldCI`, and returns the transformed confidence interval.
+    
+    All `level` arguments should have a reasonable default value. `digits` as well.
+    
+```{r}
+
+
+```    
+
+2.  Use your `waldCI` class to create three objects:
+    
+    Evaluate the following code:
+    
+    ```r
+    ci1
+    ci2
+    ci3
+    as.numeric(ci1)
+    as.numeric(ci2, .8)
+    as.numeric(ci3)
+    show(ci1, .9)
+    show(ci2, .8)
+    show(ci3, .75)
+    lb(ci2)
+    ub(ci2, .99)
+    mean(ci1)
+    sterr(ci3)
+    lb(ci2) <- 10.5
+    lb(ci2, .9) <- 10
+    mean(ci3) <- 34
+    contains(ci1, 17)
+    contains(ci2, 11, .9)
+    contains(ci3, 44)
+    overlap(ci1, ci2)
+    overlap(ci1, ci2, .99)
+    eci1 <- transform(ci1, exp)
+    eci1
+    show(eci1, .75)
+    mean(transform(ci2, sqrt))
+    ```
+    
+```{r}
+
+
+```    
+   
+3.  Show that your validator does not allow the creation of invalid confidence intervals:
+    
+
+Note that there are a lot of choices to be made here. What are you going to store in the class? How are you going to store them (what object types)? How are you going to enforce the function in `transform` being monotonic?
+
+There is no right answer to those questions. Make the best decision you can, and don’t be afraid to change it if your decision causes unforeseen difficulties.
+
+You may not use any existing R functions or packages that would trivialize this assignment. (E.g. if you found an existing package that does this, or found a function that checks for overlap between two CIs, that is not able to be used.)
+
+Hint: It may be useful to define other functions that I don’t explicitly ask for.
+    
+```{r}
+
+
+```    
+
+## Problem 2 - **data.table**
+
+Repeat [problem set 4, question 2](https://dept.stat.lsa.umich.edu/~jerrick/courses/stat506_f25/ps04.html#problem-2---tidyverse-tennis), using **data.table**.
+
+You can make the same or different decision as you did last time. You can also use or ignore the decisions I made in the solutions. As before, there is no “correct” answer (including those in the problem set 4 solutions).
+    
+```{r}
+
+
+```    
+
+## Problem 3 - **plotly**
+
+Repeat [problem set 4, question 3](https://dept.stat.lsa.umich.edu/~jerrick/courses/stat506_f25/ps04.html#problem-3---visualization) using **plotly**.
+
+There is no expectation that you produce the exact same plots as last time. You may of course use your plots as last time, or the ones from the problem set 4 solutions, as inspiration for these plots.
+
+These will be graded similar to last time:
+
+1.  Is the type of graph & choice of variables appropriate to answer the question?
+2.  Is the graph clear and easy to interpret?
+3.  Is the graph publication ready?
+    
+```{r}
+
+
+```    
