@@ -578,6 +578,93 @@ These will be graded similar to last time:
 3.  Is the graph publication ready?
 
 ```{r}
+library(readr)
+library(dplyr)
+library(plotly)
+
+covid_states <- read_csv(
+  "https://github.com/nytimes/covid-19-data/raw/master/rolling-averages/us-states.csv",
+  col_types = cols()
+)
+
+covid_states <- covid_states %>%
+  mutate(date = as.Date(date))
+
+national_daily <- covid_states %>%
+  group_by(date) %>%
+  summarize(cases_avg = sum(cases_avg, na.rm = TRUE), .groups = "drop")
+
+p1 <- plot_ly(
+  national_daily,
+  x = ~date,
+  y = ~cases_avg,
+  type = "scatter",
+  mode = "lines"
+) %>%
+  layout(
+    title = "Daily 7-day average COVID-19 cases in the US (sum over states)",
+    xaxis = list(title = "Date"),
+    yaxis = list(title = "7-day average cases (sum over states)")
+  )
+
+p1
+
+state_rates <- covid_states %>%
+  group_by(state) %>%
+  summarize(mean_rate = mean(cases_avg_per_100k, na.rm = TRUE), .groups = "drop") %>%
+  arrange(desc(mean_rate))
+
+top_states <- head(state_rates$state, 3)
+bottom_states <- tail(state_rates$state, 3)
+
+states_subset <- covid_states %>%
+  filter(state %in% c(top_states, bottom_states))
+
+p2 <- plot_ly(
+  states_subset,
+  x = ~date,
+  y = ~cases_avg_per_100k,
+  color = ~state,
+  type = "scatter",
+  mode = "lines"
+) %>%
+  layout(
+    title = "States with highest and lowest mean case rates per 100k",
+    xaxis = list(title = "Date"),
+    yaxis = list(title = "7-day average cases per 100,000"),
+    legend = list(title = list(text = "State"))
+  )
+
+p2
+
+first_substantial <- covid_states %>%
+  filter(cases_avg_per_100k >= 1) %>%
+  group_by(state) %>%
+  summarize(first_date = min(date), .groups = "drop") %>%
+  arrange(first_date) %>%
+  slice(1:5)
+
+first_substantial
+
+early_states_data <- covid_states %>%
+  filter(state %in% first_substantial$state)
+
+p3 <- plot_ly(
+  early_states_data,
+  x = ~date,
+  y = ~cases_avg_per_100k,
+  color = ~state,
+  type = "scatter",
+  mode = "lines"
+) %>%
+  layout(
+    title = "Early states to experience substantial COVID activity",
+    xaxis = list(title = "Date"),
+    yaxis = list(title = "7-day average cases per 100,000"),
+    legend = list(title = list(text = "State"))
+  )
+
+p3
 
 
 ```
