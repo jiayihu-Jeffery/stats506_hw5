@@ -7,22 +7,28 @@ format:
     toc: true
     toc-depth: 3
     embed-resources: true
-editor: visual
 theme: Zephyr
+editor: visual
+
+execute:
+  warning: false   
+  message: false   
+  error: false     
 ---
+
 
 # Information
 
 **the Github website for this homework is https://github.com/jiayihu-Jeffery/stats506_hw5**
 
-## Problem Set #05  
+## Problem Set #05
 
 ## Problem 1 - OOP Programming
 
 Create a class to represent Wald-style normal approximation Confidence Intervals. Do this using S4.
 
 1.  For the `waldCI` class, define the following:
-    
+
     1.  A constructor, which takes in either a mean and standard deviation, or a lower and upper bound along with a confidence level. This should be a custom constructor, not `new()` or `waldCI()`.
     2.  A validator.
     3.  A `show` method, which takes as arguments `level` and `digits`.
@@ -33,50 +39,488 @@ Create a class to represent Wald-style normal approximation Confidence Intervals
     8.  `as.numeric` to return `c(lb, ub)` for a given `level`.
     9.  `transform` which takes in a *monotonic* `function` and a `waldCI`, and returns the transformed confidence interval.
     
+    ```{markdown}
+    ### Design choices for `waldCI`
+
+In my implementation of the `waldCI` class, I made the following design choices:
+
+1. **What to store in the class**
+
+   I store:
+   - `mean` (slot type: `numeric`, length 1),
+   - `sterr` (slot type: `numeric`, length 1),
+   - `level` (slot type: `numeric`, length 1),
+   - `digits` (slot type: `integer`, length 1).
+
+   The idea is that a Wald confidence interval is fundamentally determined by an estimate and its standard error. The lower and upper bounds for any confidence level can be derived from these via the normal quantile. Therefore, I chose to store `mean` and `sterr` as the “primary” parameters, and treat the interval endpoints as derived quantities.  
+   I also keep a default confidence level `level` in the object, which is used when methods (such as `show`, `lb`, `ub`, `as.numeric`, `contains`, `overlap`) are called without an explicit level argument. The `digits` slot is used to control the number of decimal places printed in the `show` method.
+
+2. **How they are stored (object types)**
+
+   All three numerical parameters (`mean`, `sterr`, `level`) are stored as `numeric` scalars. The `digits` slot is stored as an `integer` scalar.  
+   The validity function enforces:
+   - `sterr` > 0 and finite,
+   - `level` is finite and lies strictly between 0 and 1,
+   - `mean` is finite,
+   - and the implied confidence interval bounds for the default `level` are finite and satisfy `lb < ub`.
+
+3. **Enforcing monotonicity in `transformCI`**
+
+   The `transformCI` function takes a *monotone* function `f` and a `waldCI` object. Conceptually, if `f` is monotone on the interval \([L, U]\), then the transformed confidence interval is given by \([f(L), f(U)]\) up to ordering. In the implementation, I:
+   - Compute the original bounds \([L, U]\) for a given level.
+   - Apply `f` to the endpoints and take `min(f(L), f(U))` and `max(f(L), f(U))` as the new bounds.
+   - Optionally (when `check.monotone = TRUE`), I sample a few grid points between `L` and `U`, apply `f` to these points, and check whether all successive differences are non-negative or non-positive. If this simple check fails, I issue a warning that the function may not be monotone on the interval.
+
+   This does not guarantee strict mathematical monotonicity, but it is a practical heuristic. I also assume that the user provides a function that is intended to be monotonic; the check is mainly used to catch obviously non-monotone functions.
+
+Overall, this design keeps the internal representation simple (estimate + standard error), while allowing all requested methods to be implemented in a straightforward way.
+
+    ```
+    
+    
+
 ```{r}
+.z_from_level <- function(level) {
+  if (length(level) != 1L || !is.numeric(level)) {
+    stop("'level' must be a numeric scalar.", call. = FALSE)
+  }
+  qnorm(1 - (1 - level) / 2)
+}
+
+.lb_from_params <- function(mean, sterr, level) {
+  mean - .z_from_level(level) * sterr
+}
+
+.ub_from_params <- function(mean, sterr, level) {
+  mean + .z_from_level(level) * sterr
+}
+
+setClass(
+  "waldCI",
+  slots = list(
+    mean   = "numeric",
+    sterr  = "numeric",
+    level  = "numeric",
+    digits = "integer"
+  ),
+  prototype = list(
+    mean   = NA_real_,
+    sterr  = NA_real_,
+    level  = 0.95,
+    digits = 3L
+  ),
+  validity = function(object) {
+    msgs <- character()
+    if (length(object@mean) != 1L || !is.numeric(object@mean)) {
+      msgs <- c(msgs, "'mean' must be a numeric scalar.")
+    }
+    if (length(object@sterr) != 1L || !is.numeric(object@sterr)) {
+      msgs <- c(msgs, "'sterr' must be a numeric scalar.")
+    }
+    if (length(object@level) != 1L || !is.numeric(object@level)) {
+      msgs <- c(msgs, "'level' must be a numeric scalar.")
+    }
+    if (length(object@digits) != 1L || !is.integer(object@digits)) {
+      msgs <- c(msgs, "'digits' must be an integer scalar.")
+    }
+    if (!is.na(object@sterr)) {
+      if (!(object@sterr > 0)) {
+        msgs <- c(msgs, "'sterr' must be strictly positive.")
+      }
+      if (!is.finite(object@sterr)) {
+        msgs <- c(msgs, "'sterr' must be finite.")
+      }
+    }
+    
+      if (!is.na(object@mean)) {
+    if (!is.finite(object@mean)) {
+      msgs <- c(msgs, "'mean' must be finite.")
+    }
+  }
+
+    
+    if (!is.na(object@level)) {
+      if (!(object@level > 0 && object@level < 1)) {
+        msgs <- c(msgs, "'level' must lie strictly between 0 and 1.")
+      }
+      if (!is.finite(object@level)) {
+        msgs <- c(msgs, "'level' must be finite.")
+      }
+    }
+    if (!is.na(object@digits)) {
+      if (object@digits < 0L) {
+        msgs <- c(msgs, "'digits' must be >= 0.")
+      }
+    }
+    if (length(msgs) == 0L &&
+        is.finite(object@mean) &&
+        is.finite(object@sterr) &&
+        is.finite(object@level) &&
+        object@sterr > 0) {
+      L <- .lb_from_params(object@mean, object@sterr, object@level)
+      U <- .ub_from_params(object@mean, object@sterr, object@level)
+      if (!is.finite(L) || !is.finite(U)) {
+        msgs <- c(msgs, "CI bounds must be finite.")
+      } else if (!(L < U)) {
+        msgs <- c(msgs, "Lower bound must be strictly less than upper bound.")
+      }
+    }
+    if (length(msgs) == 0L) TRUE else msgs
+  }
+)
+
+WaldCI <- function(mean = NULL, sterr = NULL,
+                   lb = NULL, ub = NULL,
+                   level = 0.95,
+                   digits = 3L) {
+  has_mean  <- !is.null(mean)
+  has_sterr <- !is.null(sterr)
+  has_lb    <- !is.null(lb)
+  has_ub    <- !is.null(ub)
+
+  if (has_mean && has_sterr && !has_lb && !has_ub) {
+    if (length(mean) != 1L || length(sterr) != 1L) {
+      stop("'mean' and 'sterr' must be scalars.", call. = FALSE)
+    }
+    mean  <- as.numeric(mean)
+    sterr <- as.numeric(sterr)
+  } else if (!has_mean && !has_sterr && has_lb && has_ub) {
+    if (length(lb) != 1L || length(ub) != 1L) {
+      stop("'lb' and 'ub' must be scalars.", call. = FALSE)
+    }
+    lb <- as.numeric(lb)
+    ub <- as.numeric(ub)
+    if (!(lb < ub)) {
+      stop("'lb' must be strictly less than 'ub'.", call. = FALSE)
+    }
+    z <- .z_from_level(level)
+    mean  <- (lb + ub) / 2
+    sterr <- (ub - lb) / (2 * z)
+  } else {
+    stop("Specify either (mean & sterr) or (lb & ub), but not both.",
+         call. = FALSE)
+  }
+
+  level  <- as.numeric(level)
+  digits <- as.integer(digits)
+
+  obj <- new("waldCI",
+             mean   = mean,
+             sterr  = sterr,
+             level  = level,
+             digits = digits)
+
+  validObject(obj)
+  obj
+}
+
+if (!isGeneric("lb")) {
+  setGeneric("lb", function(object, level) standardGeneric("lb"))
+}
+if (!isGeneric("ub")) {
+  setGeneric("ub", function(object, level) standardGeneric("ub"))
+}
+if (!isGeneric("sterr")) {
+  setGeneric("sterr", function(object) standardGeneric("sterr"))
+}
+if (!isGeneric("level")) {
+  setGeneric("level", function(object) standardGeneric("level"))
+}
+
+if (!isGeneric("lb<-")) {
+  setGeneric("lb<-", function(object, level, value) standardGeneric("lb<-"))
+}
+if (!isGeneric("ub<-")) {
+  setGeneric("ub<-", function(object, level, value) standardGeneric("ub<-"))
+}
+if (!isGeneric("sterr<-")) {
+  setGeneric("sterr<-", function(object, value) standardGeneric("sterr<-"))
+}
+if (!isGeneric("level<-")) {
+  setGeneric("level<-", function(object, value) standardGeneric("level<-"))
+}
+if (!isGeneric("mean<-")) {
+  setGeneric("mean<-", function(x, value) standardGeneric("mean<-"))
+}
+
+if (!isGeneric("contains")) {
+  setGeneric("contains", function(object, x, level) standardGeneric("contains"))
+}
+if (!isGeneric("overlap")) {
+  setGeneric("overlap", function(x, y, level) standardGeneric("overlap"))
+}
+
+setMethod("lb",
+          signature(object = "waldCI", level = "missing"),
+          function(object) {
+            .lb_from_params(object@mean, object@sterr, object@level)
+          })
+
+setMethod("lb",
+          signature(object = "waldCI", level = "numeric"),
+          function(object, level) {
+            .lb_from_params(object@mean, object@sterr, level)
+          })
+
+setMethod("ub",
+          signature(object = "waldCI", level = "missing"),
+          function(object) {
+            .ub_from_params(object@mean, object@sterr, object@level)
+          })
+
+setMethod("ub",
+          signature(object = "waldCI", level = "numeric"),
+          function(object, level) {
+            .ub_from_params(object@mean, object@sterr, level)
+          })
+
+setMethod("mean",
+          signature(x = "waldCI"),
+          function(x, ...) {
+            x@mean
+          })
+
+setMethod("sterr",
+          signature(object = "waldCI"),
+          function(object) {
+            object@sterr
+          })
+
+setMethod("level",
+          signature(object = "waldCI"),
+          function(object) {
+            object@level
+          })
+
+setMethod("lb<-",
+          signature(object = "waldCI", level = "missing", value = "numeric"),
+          function(object, value) {
+            lev <- object@level
+            old_lb <- lb(object, lev)
+            delta  <- value - old_lb
+            object@mean <- object@mean + delta
+            validObject(object)
+            object
+          })
+
+setMethod("lb<-",
+          signature(object = "waldCI", level = "numeric", value = "numeric"),
+          function(object, level, value) {
+            old_lb <- lb(object, level)
+            delta  <- value - old_lb
+            object@mean <- object@mean + delta
+            validObject(object)
+            object
+          })
+
+setMethod("ub<-",
+          signature(object = "waldCI", level = "missing", value = "numeric"),
+          function(object, value) {
+            lev <- object@level
+            old_ub <- ub(object, lev)
+            delta  <- value - old_ub
+            object@mean <- object@mean + delta
+            validObject(object)
+            object
+          })
+
+setMethod("ub<-",
+          signature(object = "waldCI", level = "numeric", value = "numeric"),
+          function(object, level, value) {
+            old_ub <- ub(object, level)
+            delta  <- value - old_ub
+            object@mean <- object@mean + delta
+            validObject(object)
+            object
+          })
+
+setMethod("mean<-",
+          signature(x = "waldCI", value = "numeric"),
+          function(x, value) {
+            x@mean <- as.numeric(value)
+            validObject(x)
+            x
+          })
+
+setMethod("sterr<-",
+          signature(object = "waldCI", value = "numeric"),
+          function(object, value) {
+            object@sterr <- as.numeric(value)
+            validObject(object)
+            object
+          })
+
+setMethod("level<-",
+          signature(object = "waldCI", value = "numeric"),
+          function(object, value) {
+            object@level <- as.numeric(value)
+            validObject(object)
+            object
+          })
+
+setMethod("show",
+          signature(object = "waldCI"),
+          function(object) {
+            lev <- object@level
+            dig <- object@digits
+            L <- lb(object, lev)
+            U <- ub(object, lev)
+            cat("An object of class 'waldCI'\n")
+            cat(sprintf("  mean  = %.*f\n",   dig, object@mean))
+            cat(sprintf("  sterr = %.*f\n",   dig, object@sterr))
+            cat(sprintf("  level = %.*f\n",   dig, lev))
+            cat(sprintf("  CI    = [%.*f, %.*f]\n", dig, L, dig, U))
+          })
+
+setMethod("contains",
+          signature(object = "waldCI", x = "numeric", level = "missing"),
+          function(object, x) {
+            lev <- object@level
+            L <- lb(object, lev)
+            U <- ub(object, lev)
+            x >= L & x <= U
+          })
+
+setMethod("contains",
+          signature(object = "waldCI", x = "numeric", level = "numeric"),
+          function(object, x, level) {
+            L <- lb(object, level)
+            U <- ub(object, level)
+            x >= L & x <= U
+          })
+
+setMethod("overlap",
+          signature(x = "waldCI", y = "waldCI", level = "missing"),
+          function(x, y) {
+            lev <- x@level
+            L1 <- lb(x, lev); U1 <- ub(x, lev)
+            L2 <- lb(y, lev); U2 <- ub(y, lev)
+            max(L1, L2) <= min(U1, U2)
+          })
+
+setMethod("overlap",
+          signature(x = "waldCI", y = "waldCI", level = "numeric"),
+          function(x, y, level) {
+            L1 <- lb(x, level); U1 <- ub(x, level)
+            L2 <- lb(y, level); U2 <- ub(y, level)
+            max(L1, L2) <= min(U1, U2)
+          })
+
+setMethod("as.numeric",
+          signature(x = "waldCI"),
+          function(x, level = x@level, ...) {
+            L <- lb(x, level)
+            U <- ub(x, level)
+            c(L, U)
+          })
+
+transformCI <- function(ci, f, level = ci@level,
+                        check.monotone = TRUE) {
+  if (!inherits(ci, "waldCI")) {
+    stop("'ci' must be a 'waldCI' object.", call. = FALSE)
+  }
+  if (!is.function(f)) {
+    stop("'f' must be a function.", call. = FALSE)
+  }
+  L <- lb(ci, level)
+  U <- ub(ci, level)
+  a <- f(L)
+  b <- f(U)
+  if (!is.finite(a) || !is.finite(b)) {
+    stop("Transformed bounds must be finite.", call. = FALSE)
+  }
+  if (check.monotone) {
+    xs <- seq(L, U, length.out = 5L)
+    ys <- vapply(xs, f, numeric(1))
+    if (any(!is.finite(ys))) {
+      warning("Transformed values contain non-finite numbers; monotonicity check skipped.")
+    } else {
+      d <- diff(ys)
+      if (!(all(d >= 0) || all(d <= 0))) {
+        warning("Function may not be monotone on this interval.")
+      }
+    }
+  }
+  new_lb <- min(a, b)
+  new_ub <- max(a, b)
+  WaldCI(lb = new_lb, ub = new_ub,
+         level = level,
+         digits = ci@digits)
+}
 
 
-```    
+```
 
 2.  Use your `waldCI` class to create three objects:
-    
+
 Evaluate the following code:\
 ci1: (17.2, 24.7), 95%\
 ci2: mean: 13, standard error: 2.5, 99%\
 ci3: (27.43, 39.22), 75%\
-    
-    ```r
-    ci1
-    ci2
-    ci3
-    as.numeric(ci1)
-    as.numeric(ci2)
-    as.numeric(ci3)
-    lb(ci2)
-    ub(ci2)
-    mean(ci1)
-    sterr(ci3)
-    level(ci2)
-    lb(ci2) <- 10.5
-    mean(ci3) <- 34
-    level(ci3) <- .8
-    contains(ci1, 17)
-    contains(ci3, 44)
-    overlap(ci1, ci2)
-    eci1 <- transformCI(ci1, sqrt)
-    eci1
-    mean(transformCI(ci2, log))
-    ```
-    
+
+```
+ci1
+ci2
+ci3
+as.numeric(ci1)
+as.numeric(ci2)
+as.numeric(ci3)
+lb(ci2)
+ub(ci2)
+mean(ci1)
+sterr(ci3)
+level(ci2)
+lb(ci2) <- 10.5
+mean(ci3) <- 34
+level(ci3) <- .8
+contains(ci1, 17)
+contains(ci3, 44)
+overlap(ci1, ci2)
+eci1 <- transformCI(ci1, sqrt)
+eci1
+mean(transformCI(ci2, log))
+```
+
+
 ```{r}
+ci1 <- WaldCI(lb = 17.2, ub = 24.7, level = 0.95)
+ci2 <- WaldCI(mean = 13, sterr = 2.5, level = 0.99)
+ci3 <- WaldCI(lb = 27.43, ub = 39.22, level = 0.75)
+
+ci1
+ci2
+ci3
+
+as.numeric(ci1)
+as.numeric(ci2)
+as.numeric(ci3)
+
+lb(ci2)
+ub(ci2)
+mean(ci1)
+sterr(ci3)
+level(ci2)
+
+lb(ci2) <- 10.5
+mean(ci3) <- 34
+level(ci3) <- 0.8
+
+contains(ci1, 17)
+contains(ci3, 44)
+overlap(ci1, ci2)
+
+eci1 <- transformCI(ci1, sqrt)
+eci1
+
+mean(transformCI(ci2, log))
 
 
-```    
-   
+```
+
 3.  Show that your validator does not allow the creation of invalid confidence intervals:
-    
+
 negative standard error\
-lb > ub\
+lb \> ub\
 Infinite bounds\
 invalid use of the setters\
 (Infinite confidence bounds are of course not truely invalid, but we’re just going to ignore them for this case.)\
@@ -88,12 +532,38 @@ There is no right answer to those questions. Make the best decision you can, and
 You may not use any existing R functions or packages that would trivialize this assignment. (E.g. if you found an existing package that does this, or found a function that checks for overlap between two CIs, that is not able to be used.)
 
 Hint: It may be useful to define other functions that I don’t explicitly ask for.
-    
+
 ```{r}
+cat("negative sterr via constructor\n")
+try(WaldCI(mean = 0, sterr = -1, level = 0.95))
+
+cat("\nlb > ub via constructor\n")
+try(WaldCI(lb = 5, ub = 1, level = 0.95))
+
+cat("\ninfinite bounds via lb = -Inf\n")
+try(WaldCI(lb = -Inf, ub = 1, level = 0.95))
+
+cat("\ninfinite bounds via mean = Inf\n")
+try(WaldCI(mean = Inf, sterr = 1, level = 0.95))
+
+cat("\ninvalid setter: negative sterr\n")
+ci_ok1 <- WaldCI(mean = 0, sterr = 1, level = 0.95)
+try(sterr(ci_ok1) <- -2)
+
+cat("\ninvalid setter: infinite sterr\n")
+ci_ok2 <- WaldCI(mean = 1, sterr = 0.5, level = 0.9)
+try(sterr(ci_ok2) <- Inf)
+
+cat("\ninvalid setter: level outside (0,1)\n")
+ci_ok3 <- WaldCI(mean = 2, sterr = 1, level = 0.95)
+try(level(ci_ok3) <- 1)
+
+cat("\ninvalid setter: making bounds infinite via mean\n")
+ci_ok4 <- WaldCI(mean = 3, sterr = 1, level = 0.95)
+try(mean(ci_ok4) <- Inf)
 
 
-```    
-
+```
 
 ## Problem 3 - **plotly**
 
@@ -106,8 +576,8 @@ These will be graded similar to last time:
 1.  Is the type of graph & choice of variables appropriate to answer the question?
 2.  Is the graph clear and easy to interpret?
 3.  Is the graph publication ready?
-    
+
 ```{r}
 
 
-```    
+```
